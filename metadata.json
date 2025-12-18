@@ -1,0 +1,5 @@
+{
+  "name": "Broadcast Cricket Scoreboard",
+  "description": "A professional, TV-broadcast quality cricket scoreboard overlay featuring high-contrast graphics, real-time ball tracking, and split-screen stats.",
+  "requestFramePermissions": []
+}
