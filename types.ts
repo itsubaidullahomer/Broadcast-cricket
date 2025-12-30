@@ -8,6 +8,7 @@ export interface Player {
   sixes: number;
   isStriker?: boolean;
   battingStyle?: 'RHB' | 'LHB'; // Right Hand Bat, Left Hand Bat
+  imageUrl?: string;
 }
 
 export interface Bowler {
