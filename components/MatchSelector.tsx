@@ -7,7 +7,7 @@ interface MatchSelectorProps {
   onClose: () => void;
 }
 
-const DEFAULT_API_KEY = '321b5c32-f633-48d7-8045-6309e6f53242'; // Updated API Key
+const DEFAULT_API_KEY = '12188cf2-0747-4bf7-804b-c63fec12f1cb'; // Updated API Key
 
 const MatchSelector: React.FC<MatchSelectorProps> = ({ onSelectMatch, onClose }) => {
   const [matches, setMatches] = useState<CricAPIMatch[]>([]);
