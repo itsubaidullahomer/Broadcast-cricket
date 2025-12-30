@@ -1,149 +1,310 @@
-import React, { useState } from 'react';
-import { GoogleGenAI, Type, Schema } from "@google/genai";
+import React, { useState, useEffect } from 'react';
 import MatchHeader from './components/MatchHeader';
 import PlayerCard from './components/PlayerCard';
 import BowlerCard from './components/BowlerCard';
-import BallCircle from './components/BallCircle';
 import MatchStatusPanel from './components/MatchStatusPanel';
 import MatchSelector from './components/MatchSelector';
-import { INITIAL_MATCH_STATE } from './constants';
+import { INITIAL_MATCH_STATE, FALLBACK_BATTERS, FALLBACK_BOWLERS } from './constants';
 import { MatchState, BallType, Ball, CricAPIMatch } from './types';
-import { Loader2, Radio } from 'lucide-react';
-
-// Enhanced schema for detailed API-like response
-const ballOutcomeSchema: Schema = {
-  type: Type.OBJECT,
-  properties: {
-    runs: { type: Type.INTEGER, description: "Runs scored (0-6)" },
-    isWicket: { type: Type.BOOLEAN, description: "Is it a wicket?" },
-    wicketType: { type: Type.STRING, description: "e.g. caught, bowled, lbw, or 'none'" },
-    shotType: { type: Type.STRING, description: "Technical shot name (e.g. Cover Drive, Pull, Cut, Slog)" },
-    shotAngle: { type: Type.INTEGER, description: "Direction angle in degrees. 0=Straight(North), 90=East, 180=Keeper(South), 270=West. Used for wagon wheel." },
-    shotDirection: { type: Type.STRING, description: "Text direction (e.g. Deep Mid Wicket, Long Off)" },
-    pitchMap: { type: Type.STRING, description: "Where it pitched (e.g. Yorker, Short, Good Length)" },
-    commentary: { type: Type.STRING, description: "TV Broadcast style commentary" },
-  },
-  required: ["runs", "isWicket", "shotType", "commentary", "shotAngle", "pitchMap"]
-};
+import { Loader2, Radio, RefreshCw, Play } from 'lucide-react';
 
 const App: React.FC = () => {
   const [matchState, setMatchState] = useState<MatchState>(INITIAL_MATCH_STATE);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [showMatchSelector, setShowMatchSelector] = useState(false);
+  
+  // Track current match ID and API Key for syncing
+  const [currentMatchId, setCurrentMatchId] = useState<string | null>(null);
+  const [currentApiKey, setCurrentApiKey] = useState<string | null>(null);
 
-  // Handle importing data from the Live API
-  const handleMatchSelection = (match: CricAPIMatch) => {
-    // Basic logic to determine who is batting (last innings in the score array)
+  // Initial Load: Show Match Selector immediately
+  useEffect(() => {
+    setShowMatchSelector(true);
+  }, []);
+
+  const handleMatchSelection = async (match: CricAPIMatch, apiKey: string) => {
+    setCurrentMatchId(match.id);
+    setCurrentApiKey(apiKey);
+
+    console.log("Selected Match:", match);
+
     const currentInningScore = match.score && match.score.length > 0 ? match.score[match.score.length - 1] : null;
-    
-    // Find batting team info
     const battingTeamName = currentInningScore ? currentInningScore.inning.split('Inning')[0].trim() : match.teamInfo[0].name;
-    // Simple fuzzy match or exact match
     const battingTeamInfo = match.teamInfo.find(t => t.name.includes(battingTeamName) || battingTeamName.includes(t.name)) || match.teamInfo[0];
     const bowlingTeamInfo = match.teamInfo.find(t => t.name !== battingTeamInfo.name) || match.teamInfo[1];
 
     setMatchState(prev => ({
       ...prev,
       battingTeam: {
-        name: battingTeamInfo.name.toUpperCase(),
+        name: battingTeamInfo.name,
         shortName: battingTeamInfo.shortname?.toUpperCase() || battingTeamInfo.name.substring(0, 3).toUpperCase(),
-        color: '#1e293b', // Default dark
+        color: '#1e293b', 
         flagUrl: battingTeamInfo.img
       },
       bowlingTeam: {
-        name: bowlingTeamInfo.name.toUpperCase(),
+        name: bowlingTeamInfo.name,
         shortName: bowlingTeamInfo.shortname?.toUpperCase() || bowlingTeamInfo.name.substring(0, 3).toUpperCase(),
-        color: '#334155', // Default lighter dark
+        color: '#334155',
         flagUrl: bowlingTeamInfo.img
       },
       totalRuns: currentInningScore ? currentInningScore.r : 0,
       wickets: currentInningScore ? currentInningScore.w : 0,
       overs: currentInningScore ? currentInningScore.o : 0,
       crr: currentInningScore ? parseFloat((currentInningScore.r / (currentInningScore.o || 1)).toFixed(2)) : 0,
-      // Reset contextual stats as we don't have them from the summary API
       currentOver: [],
       lastOver: [],
       lastBallCommentary: `Live Score updated from ${match.venue}`,
-      lastShotType: '',
-      lastShotAngle: undefined,
-      currentPartnership: { runs: 0, balls: 0, batter1Id: '1', batter2Id: '2' }, // Reset
-      // Keep batsmen generic or reset names
+      currentPartnership: { runs: 0, balls: 0, batter1Id: '1', batter2Id: '2' },
       batsmen: [
         { ...prev.batsmen[0], name: 'BATTER 1', runs: 0, balls: 0, fours: 0, sixes: 0 },
         { ...prev.batsmen[1], name: 'BATTER 2', runs: 0, balls: 0, fours: 0, sixes: 0 }
       ],
-      bowler: { ...prev.bowler, name: 'BOWLER', wickets: 0, runsConceded: 0, overs: 0, maidens: 0 }
+      bowler: { ...prev.bowler, name: 'BOWLER', wickets: 0, runsConceded: 0, overs: 0, maidens: 0 },
+      lastBallImage: undefined
     }));
-    
     setShowMatchSelector(false);
+    
+    // Trigger sync immediately (will also trigger interval setup)
+    setTimeout(() => handleLiveSync(match.id, apiKey), 100);
   };
 
-  // This function acts as our "Intelligence Engine" to simulate specific ball details 
-  // that are not provided by the basic free API (like shot angles, pitch maps).
+  const handleLiveSync = async (matchIdOverride?: string, apiKeyOverride?: string) => {
+    // Prevent overlapping syncs
+    if (isSyncing) return;
+
+    const mId = matchIdOverride || currentMatchId;
+    const k = apiKeyOverride || currentApiKey;
+
+    if (!mId || !k) {
+        if (!mId) setShowMatchSelector(true);
+        return;
+    }
+    setIsSyncing(true);
+    try {
+        // 1. Fetch Basic Info
+        const infoRes = await fetch(`https://api.cricapi.com/v1/match_info?apikey=${k}&id=${mId}`);
+        const infoData = await infoRes.json();
+        console.log("API: Match Info Response", infoData);
+
+        let newStateUpdates: Partial<MatchState> = {};
+        
+        // Process Basic Info
+        if (infoData.status === 'success' && infoData.data) {
+            const matchData = infoData.data as CricAPIMatch;
+            const currentInningScore = matchData.score && matchData.score.length > 0 ? matchData.score[matchData.score.length - 1] : null;
+            
+            newStateUpdates = {
+                ...newStateUpdates,
+                totalRuns: currentInningScore ? currentInningScore.r : undefined,
+                wickets: currentInningScore ? currentInningScore.w : undefined,
+                overs: currentInningScore ? currentInningScore.o : undefined,
+                crr: currentInningScore ? parseFloat((currentInningScore.r / (currentInningScore.o || 1)).toFixed(2)) : undefined,
+                lastBallCommentary: `Score synced: ${matchData.status}`
+            };
+        }
+
+        // 2. Try Fetch Scorecard
+        const scoreRes = await fetch(`https://api.cricapi.com/v1/match_scorecard?apikey=${k}&id=${mId}`);
+        const scoreData = await scoreRes.json();
+        console.log("API: Scorecard Response", scoreData);
+
+        let namesFound = false;
+
+        if (scoreData.status === 'success' && scoreData.data && scoreData.data.scorecard) {
+             const scorecard = scoreData.data.scorecard;
+             if (scorecard.length > 0) {
+                const lastInning = scorecard[scorecard.length - 1];
+                const activeBatters = lastInning.batsman.filter((b: any) => !b.dismissal || b.dismissal === "batting" || b.dismissal === "not out");
+                
+                let batter1Name = 'BATTER 1'; let batter2Name = 'BATTER 2';
+                
+                if (activeBatters.length > 0) batter1Name = activeBatters[0].name;
+                if (activeBatters.length > 1) batter2Name = activeBatters[1].name;
+
+                // Simple check if we got real names
+                if (batter1Name !== 'BATTER 1') {
+                    namesFound = true;
+                    // Apply updates
+                    newStateUpdates.batsmen = [
+                        { ...matchState.batsmen[0], name: batter1Name, runs: parseInt(activeBatters[0]?.runs)||0, balls: parseInt(activeBatters[0]?.balls)||0 },
+                        { ...matchState.batsmen[1], name: batter2Name, runs: parseInt(activeBatters[1]?.runs)||0, balls: parseInt(activeBatters[1]?.balls)||0 }
+                    ];
+                    // Bowler logic...
+                    if (lastInning.bowling && lastInning.bowling.length > 0) {
+                         const lastBowler = lastInning.bowling[lastInning.bowling.length - 1];
+                         newStateUpdates.bowler = { 
+                             ...matchState.bowler, 
+                             name: lastBowler.bowler.name, 
+                             wickets: parseInt(lastBowler.wickets)||0, 
+                             runsConceded: parseInt(lastBowler.runs)||0,
+                             overs: parseFloat(lastBowler.overs)||0
+                         };
+                    }
+                }
+             }
+        }
+
+        // 3. Fallback: Try Squad if Scorecard failed or yielded no names
+        if (!namesFound) {
+            try {
+                const squadRes = await fetch(`https://api.cricapi.com/v1/match_squad?apikey=${k}&id=${mId}`);
+                const squadData = await squadRes.json();
+
+                if (squadData.status === 'success' && squadData.data && Array.isArray(squadData.data) && squadData.data.length > 0) {
+                    const battingTeamName = matchState.battingTeam.name;
+                    const bowlingTeamName = matchState.bowlingTeam.name;
+                    
+                    const squads = squadData.data;
+                    const battingSquadObj = squads.find((s: any) => s.teamName === battingTeamName || battingTeamName.includes(s.teamName));
+                    const bowlingSquadObj = squads.find((s: any) => s.teamName === bowlingTeamName || bowlingTeamName.includes(s.teamName));
+                    
+                    if (battingSquadObj && battingSquadObj.players && battingSquadObj.players.length > 1) {
+                         newStateUpdates.batsmen = [
+                            { ...matchState.batsmen[0], name: battingSquadObj.players[0].name, runs: 0, balls: 0 }, 
+                            { ...matchState.batsmen[1], name: battingSquadObj.players[1].name, runs: 0, balls: 0 }
+                        ];
+                        namesFound = true;
+                    }
+
+                    if (bowlingSquadObj && bowlingSquadObj.players && bowlingSquadObj.players.length > 0) {
+                        const p = bowlingSquadObj.players;
+                        const bowlerName = p[p.length - 1].name; 
+                        newStateUpdates.bowler = {
+                            ...matchState.bowler,
+                            name: bowlerName,
+                            wickets: 0, runsConceded: 0, overs: 0
+                        }
+                    }
+                }
+            } catch (sqErr) {
+                console.log("Squad fetch error", sqErr);
+            }
+        }
+
+        if (!namesFound) {
+            const b1Index = Math.floor(Math.random() * FALLBACK_BATTERS.length);
+            let b2Index = Math.floor(Math.random() * FALLBACK_BATTERS.length);
+            while(b2Index === b1Index) b2Index = Math.floor(Math.random() * FALLBACK_BATTERS.length);
+            
+            const b1Name = FALLBACK_BATTERS[b1Index];
+            const b2Name = FALLBACK_BATTERS[b2Index];
+            const bowlerName = FALLBACK_BOWLERS[Math.floor(Math.random() * FALLBACK_BOWLERS.length)];
+
+            newStateUpdates.batsmen = [
+                { ...matchState.batsmen[0], name: b1Name, runs: 0, balls: 0 },
+                { ...matchState.batsmen[1], name: b2Name, runs: 0, balls: 0 }
+            ];
+            newStateUpdates.bowler = {
+                ...matchState.bowler,
+                name: bowlerName,
+                wickets: 0, runsConceded: 0, overs: 0
+            };
+        }
+
+        setMatchState(prev => {
+             const merged = { ...prev };
+             if (newStateUpdates.totalRuns !== undefined) merged.totalRuns = newStateUpdates.totalRuns;
+             if (newStateUpdates.wickets !== undefined) merged.wickets = newStateUpdates.wickets;
+             if (newStateUpdates.overs !== undefined) merged.overs = newStateUpdates.overs;
+             if (newStateUpdates.crr !== undefined) merged.crr = newStateUpdates.crr;
+             if (newStateUpdates.lastBallCommentary) merged.lastBallCommentary = newStateUpdates.lastBallCommentary;
+             if (newStateUpdates.batsmen) merged.batsmen = newStateUpdates.batsmen;
+             if (newStateUpdates.bowler) merged.bowler = newStateUpdates.bowler;
+             return merged;
+        });
+
+    } catch (e) {
+        console.error("Sync failed", e);
+    } finally {
+        setIsSyncing(false);
+    }
+  };
+
+  // Auto-Sync: Poll every 10 seconds
+  useEffect(() => {
+    if (!currentMatchId || !currentApiKey) return;
+
+    const timer = setInterval(() => {
+        handleLiveSync();
+    }, 10000); // 10s interval
+
+    return () => clearInterval(timer);
+  }, [currentMatchId, currentApiKey, matchState, isSyncing]);
+
   const generateNextBall = async () => {
     if (isLoading) return;
-
-    // API Key Check
-    const hasKey = await window.aistudio?.hasSelectedApiKey();
-    if (!hasKey) {
-        await window.aistudio?.openSelectKey();
-    }
-    
     setIsLoading(true);
 
-    try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const model = "gemini-3-flash-preview"; 
+    await new Promise(resolve => setTimeout(resolve, 500));
 
-      const striker = matchState.batsmen.find(b => b.isStriker);
-      
-      // High-Fidelity Data Prompt simulating the live feed details
-      const prompt = `
-        Act as a live cricket data feed API for the match: ${matchState.battingTeam.name} vs ${matchState.bowlingTeam.name}.
-        Current Score: ${matchState.totalRuns}/${matchState.wickets} (${matchState.overs} ov).
-        
-        Batter on strike: ${striker?.name}.
-        
-        Generate the NEXT ball outcome. 
-        Note: If this is a real match simulation, assume a realistic event that just happened.
-        
-        Return JSON data.
-      `;
+    let currentStrikerName = matchState.batsmen.find(b => b.isStriker)?.name;
+    let currentNonStrikerName = matchState.batsmen.find(b => !b.isStriker)?.name;
+    let currentBowlerName = matchState.bowler.name;
 
-      const result = await ai.models.generateContent({
-        model: model,
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: ballOutcomeSchema,
-          temperature: 0.8
-        }
-      });
-
-      const outcome = JSON.parse(result.text || "{}");
-      
-      if (outcome) {
-        processBallOutcome(outcome);
-      }
-
-    } catch (error) {
-      console.error("Error generating ball:", error);
-      alert("Failed to fetch ball data.");
-    } finally {
-      setIsLoading(false);
+    if (currentStrikerName === 'BATTER 1' || !currentStrikerName) {
+        currentStrikerName = FALLBACK_BATTERS[Math.floor(Math.random() * FALLBACK_BATTERS.length)];
     }
+    if (currentNonStrikerName === 'BATTER 2' || !currentNonStrikerName) {
+        currentNonStrikerName = FALLBACK_BATTERS[Math.floor(Math.random() * FALLBACK_BATTERS.length)];
+        if (currentNonStrikerName === currentStrikerName) currentNonStrikerName = "S. Gill"; 
+    }
+    if (currentBowlerName === 'BOWLER' || !currentBowlerName) {
+        currentBowlerName = FALLBACK_BOWLERS[Math.floor(Math.random() * FALLBACK_BOWLERS.length)];
+    }
+
+    const rand = Math.random();
+    let runs = 0;
+    let isWicket = false;
+    let commentary = "";
+    let shotType = "Defense";
+
+    if (rand < 0.3) { runs = 0; commentary = "Solid defensive shot back to the bowler."; shotType = "Defensive Push"; }
+    else if (rand < 0.6) { runs = 1; commentary = "Worked away into the gap for a single."; shotType = "Glance"; }
+    else if (rand < 0.7) { runs = 2; commentary = "Pushed hard, they come back for the second."; shotType = "Drive"; }
+    else if (rand < 0.85) { runs = 4; commentary = "Beautiful shot! Races away to the boundary for Four."; shotType = "Cover Drive"; }
+    else if (rand < 0.95) { runs = 6; commentary = "High and handsome! That is a massive Six!"; shotType = "Pull Shot"; }
+    else { isWicket = true; commentary = "OUT! Caught in the deep!"; shotType = "Mistimed Shot"; }
+
+    const outcome = {
+        runs,
+        isWicket,
+        wicketType: isWicket ? 'caught' : undefined,
+        shotType,
+        shotAngle: Math.floor(Math.random() * 360),
+        shotDirection: 'Field',
+        pitchMap: 'Good Length',
+        commentary,
+        strikerName: currentStrikerName,
+        nonStrikerName: currentNonStrikerName,
+        bowlerName: currentBowlerName
+    };
+
+    processBallOutcome(outcome);
+    setIsLoading(false);
   };
 
-  const processBallOutcome = (outcome: any) => {
+  const processBallOutcome = async (outcome: any) => {
+    let sName = outcome.strikerName;
+    let nsName = outcome.nonStrikerName;
+    let bName = outcome.bowlerName;
+
     setMatchState(prev => {
       const newState = { ...prev };
       
-      // 1. Create Detailed Ball Object
+      const strikerIdx = newState.batsmen.findIndex(b => b.isStriker);
+      const nonStrikerIdx = newState.batsmen.findIndex(b => !b.isStriker);
+      
+      if (strikerIdx !== -1 && sName) newState.batsmen[strikerIdx].name = sName;
+      if (nonStrikerIdx !== -1 && nsName) newState.batsmen[nonStrikerIdx].name = nsName;
+      if (bName) newState.bowler.name = bName;
+
       let ballType = BallType.DOT;
       if (outcome.isWicket) ballType = BallType.WICKET;
       else if (outcome.runs === 4) ballType = BallType.FOUR;
       else if (outcome.runs === 6) ballType = BallType.SIX;
       else if (outcome.runs > 0) ballType = BallType.RUN;
+      else if (outcome.runs === 0) ballType = BallType.DOT; 
 
       const newBall: Ball = {
         id: Date.now().toString(),
@@ -158,10 +319,7 @@ const App: React.FC = () => {
         batterName: newState.batsmen.find(b => b.isStriker)?.name
       };
 
-      // 2. Update Match Score
       newState.totalRuns += outcome.runs;
-      
-      // 3. Update Overs Logic
       let ballsInOver = Math.round((prev.overs % 1) * 10);
       let overs = Math.floor(prev.overs);
       ballsInOver++;
@@ -175,8 +333,8 @@ const App: React.FC = () => {
         newState.currentOver = [...prev.currentOver, newBall];
       }
       newState.overs = parseFloat(`${overs}.${ballsInOver}`);
+      newState.lastShotType = outcome.shotType;
 
-      // 4. Update Batsman Stats
       const strikerIndex = newState.batsmen.findIndex(b => b.isStriker);
       if (strikerIndex !== -1) {
          const striker = { ...newState.batsmen[strikerIndex] };
@@ -195,16 +353,22 @@ const App: React.FC = () => {
                  howOut: outcome.wicketType || 'out',
                  atScore: newState.totalRuns
              };
-             // Reset striker for next batter
              newState.currentPartnership = { runs: 0, balls: 0, batter1Id: 'new', batter2Id: 'new' };
-             striker.name = "NEW BATTER";
+             
+             let nextName = FALLBACK_BATTERS[Math.floor(Math.random() * FALLBACK_BATTERS.length)];
+             const nonStriker = newState.batsmen.find(b => !b.isStriker);
+             while (nonStriker && nextName === nonStriker.name) {
+                 nextName = FALLBACK_BATTERS[Math.floor(Math.random() * FALLBACK_BATTERS.length)];
+             }
+
+             striker.name = nextName;
              striker.runs = 0;
              striker.balls = 0;
              striker.fours = 0;
              striker.sixes = 0;
              newState.batsmen[strikerIndex] = striker;
+
          } else {
-             // Update Partnership
              newState.currentPartnership = {
                  ...prev.currentPartnership,
                  runs: prev.currentPartnership.runs + outcome.runs,
@@ -212,129 +376,96 @@ const App: React.FC = () => {
              };
          }
 
-         // Swap Ends logic
          if (outcome.runs % 2 !== 0 || (ballsInOver === 0 && !outcome.isWicket)) {
              newState.batsmen.forEach(b => b.isStriker = !b.isStriker);
          }
       }
 
-      // 5. Update Bowler Stats
       newState.bowler = { ...prev.bowler };
       newState.bowler.runsConceded += outcome.runs;
       if (outcome.isWicket) newState.bowler.wickets += 1;
       if (ballsInOver === 0) newState.bowler.overs += 0.4;
       else newState.bowler.overs += 0.1;
 
-      // 6. Update CRR
       const totalOversDecimal = overs + (ballsInOver / 6);
       newState.crr = parseFloat((newState.totalRuns / (totalOversDecimal || 1)).toFixed(2));
-
-      // 7. Store latest narrative info
       newState.lastBallCommentary = outcome.commentary;
-      newState.lastShotType = outcome.shotType;
-      newState.lastShotAngle = outcome.shotAngle;
 
       return newState;
     });
   };
 
   return (
-    <div className="min-h-screen bg-[#0d1117] text-white flex flex-col items-center justify-center p-4">
+    <div className="min-h-screen bg-[#05070a] flex flex-col items-center justify-center p-4 font-roboto overflow-hidden relative">
       
+      {/* Background Ambience */}
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-[#111827] via-[#05070a] to-black opacity-80 z-0"></div>
+
       {showMatchSelector && (
-        <MatchSelector 
-          onSelectMatch={handleMatchSelection} 
-          onClose={() => setShowMatchSelector(false)} 
-        />
+        <MatchSelector onSelectMatch={handleMatchSelection} onClose={() => setShowMatchSelector(false)} />
       )}
 
-      {/* Broadcast Container */}
-      <div className="w-full max-w-7xl bg-[#12161f] shadow-2xl overflow-hidden border border-gray-800 rounded-sm relative">
+      {/* Main Broadcast Container - Fixed 1280x720 aspect ratio for Exact Youtube Size */}
+      <div className="relative z-10 w-[1280px] h-[720px] bg-[#0d1016] shadow-[0_0_100px_rgba(0,0,0,0.8)] flex flex-col overflow-hidden border border-gray-800/50 rounded-sm shrink-0">
         
-        {/* Top Control Bar (Hidden in Broadcast usually, but visible here for control) */}
-        <div className="absolute top-2 right-2 z-50">
-           <button 
-             onClick={() => setShowMatchSelector(true)}
-             className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-3 py-1 rounded flex items-center gap-2 uppercase tracking-wider shadow-lg"
-           >
+        {/* Top Right Controls Overlay */}
+        <div className="absolute top-4 right-4 z-50 flex gap-2">
+           <button onClick={() => setShowMatchSelector(true)} className="bg-red-600/90 hover:bg-red-600 text-white text-[10px] font-bold px-3 py-1.5 rounded-sm flex items-center gap-2 uppercase tracking-widest shadow-lg transition-transform hover:scale-105 backdrop-blur-sm border border-red-500/50">
              <Radio size={12} className="animate-pulse" /> Live Feed
            </button>
         </div>
 
-        {/* Top Header */}
+        {/* Header Section */}
         <MatchHeader matchState={matchState} />
 
         {/* Main Split Content */}
-        <div className="grid grid-cols-12 h-auto md:h-80 border-t border-gray-800">
-          
-          {/* Left: Batsmen Panel */}
-          <div className="col-span-12 md:col-span-7 flex flex-col border-r border-gray-800 bg-[#161b24]">
-             {matchState.batsmen.map((player) => (
-               <div key={player.id} className="flex-1 border-b border-gray-800 last:border-0">
-                  <PlayerCard player={player} />
-               </div>
-             ))}
-          </div>
+        <div className="flex-1 flex w-full relative">
+            {/* Left: Batsmen Info - Darker */}
+            <div className="w-[60%] flex flex-col bg-[#11141a] border-r border-gray-800 relative shadow-[inset_-10px_0_20px_rgba(0,0,0,0.2)]">
+                 <div className="flex-1 flex flex-col justify-center gap-[1px] bg-[#0e1116]">
+                    {/* Striker */}
+                    <PlayerCard 
+                        player={matchState.batsmen.find(b => b.isStriker) || matchState.batsmen[0]} 
+                        isActive={true} 
+                    />
+                    {/* Divider Area */}
+                    <div className="h-[2px] bg-black w-full"></div>
+                    {/* Non-Striker */}
+                    <PlayerCard 
+                        player={matchState.batsmen.find(b => !b.isStriker) || matchState.batsmen[1]} 
+                        isActive={false}
+                    />
+                 </div>
+            </div>
 
-          {/* Right: Bowler Panel */}
-          <div className="col-span-12 md:col-span-5 bg-[#161b24]">
-            <BowlerCard bowler={matchState.bowler} currentOver={matchState.currentOver} />
-          </div>
-
+            {/* Right: Bowler Info - Slightly Lighter */}
+            <div className="w-[40%] bg-[#13171f] flex flex-col justify-center p-6 relative">
+                 <BowlerCard 
+                    bowler={matchState.bowler} 
+                    currentOver={matchState.currentOver} 
+                 />
+            </div>
         </div>
 
-        {/* New Status Panel (Detailed Info with Shot Map) */}
+        {/* Footer Info Panel */}
         <MatchStatusPanel matchState={matchState} />
 
-        {/* Footer: Timeline */}
-        <div className="h-16 bg-black flex items-center px-6 border-t border-gray-800">
-           <div className="text-gray-500 font-bold uppercase text-sm tracking-wider mr-6 whitespace-nowrap">
-             Timeline
-           </div>
-           
-           <div className="flex items-center gap-4 overflow-hidden relative w-full">
-             <div className="absolute left-0 top-0 bottom-0 w-12 bg-gradient-to-r from-black to-transparent z-10 pointer-events-none"></div>
-             
-             <div className="flex gap-3 items-center opacity-50 pl-2">
-                {(matchState.lastOver || []).map((ball) => (
-                    <BallCircle key={ball.id} ball={ball} size="sm" className="opacity-60 grayscale" />
-                ))}
-                <div className="w-px h-8 bg-gray-700 mx-2"></div>
-             </div>
-             
-             <div className="flex gap-3 items-center">
-                {matchState.currentOver.map((ball) => (
-                    <BallCircle key={ball.id} ball={ball} size="md" />
-                ))}
-             </div>
-           </div>
-        </div>
-
       </div>
 
-      {/* Control Panel */}
-      <div className="mt-8 flex gap-4">
-        <button 
-          onClick={generateNextBall}
-          disabled={isLoading}
-          className="px-8 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-900 disabled:text-gray-400 text-white font-bold rounded shadow-lg transition uppercase tracking-wider text-sm flex items-center gap-3"
-        >
-          {isLoading ? (
-            <>
-              <Loader2 className="animate-spin" size={20} />
-              FETCHING DETAILS...
-            </>
-          ) : (
-            <>
-              SIMULATE NEXT BALL
-            </>
-          )}
+      {/* Control Deck */}
+      <div className="mt-8 flex gap-4 relative z-20 p-2 bg-gray-900/50 backdrop-blur-md rounded-xl border border-gray-800">
+        <button onClick={generateNextBall} disabled={isLoading || isSyncing} className="px-6 py-3 bg-white hover:bg-gray-200 text-black font-teko text-xl rounded-lg shadow-lg transition-all active:scale-95 uppercase flex items-center gap-2 leading-none">
+          {isLoading ? <Loader2 className="animate-spin" size={20} /> : <Play size={20} fill="currentColor" />}
+          {isLoading ? "Simulating..." : "Play Next Ball"}
         </button>
-      </div>
-      <div className="mt-2 text-gray-500 text-xs text-center uppercase tracking-widest max-w-xl">
-        Hybrid Mode: Live Scores from CricketData.org | Granular Details (Shot/Pitch) by Gemini AI
-      </div>
 
+        {currentMatchId && (
+            <button onClick={() => handleLiveSync()} disabled={isLoading || isSyncing} className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-teko text-xl rounded-lg shadow-lg transition-all active:scale-95 uppercase flex items-center gap-2 leading-none">
+                {isSyncing ? <RefreshCw className="animate-spin" size={20} /> : <RefreshCw size={20} />}
+                {isSyncing ? "Syncing..." : "Sync Score"}
+            </button>
+        )}
+      </div>
     </div>
   );
 };

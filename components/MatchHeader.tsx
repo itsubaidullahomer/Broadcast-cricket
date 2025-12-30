@@ -1,6 +1,5 @@
 import React from 'react';
 import { MatchState } from '../types';
-import { Target, TrendingUp, Activity } from 'lucide-react';
 
 interface MatchHeaderProps {
   matchState: MatchState;
@@ -10,101 +9,107 @@ const MatchHeader: React.FC<MatchHeaderProps> = ({ matchState }) => {
   const { battingTeam, bowlingTeam } = matchState;
 
   return (
-    <div className="w-full flex flex-col border-b-4 border-yellow-600 shadow-2xl relative z-10">
+    <div className="flex flex-col w-full relative z-20 shadow-2xl">
       
-      {/* Main Score Bar */}
-      <div className="flex w-full bg-[#1a1d26] h-24 items-stretch">
+      {/* Main Top Bar */}
+      <div className="h-[100px] w-full flex bg-[#0f1219] border-b border-gray-800 relative overflow-hidden">
         
-        {/* Batting Team Section */}
-        <div className="flex-1 flex items-center px-8 relative overflow-hidden group">
-          <div className="absolute inset-0 bg-gradient-to-r from-blue-900/40 to-transparent z-0"></div>
-          
-          {/* Flag/Logo Area */}
-          <div className="w-16 h-10 bg-white/10 rounded shadow-lg mr-6 z-10 flex items-center justify-center text-xs font-bold text-black border border-white/20 overflow-hidden">
-             {battingTeam.flagUrl ? (
-                <img src={battingTeam.flagUrl} alt={battingTeam.shortName} className="w-full h-full object-cover" />
-             ) : (
-                <div className="w-full h-full bg-gradient-to-br from-gray-200 to-gray-400 flex items-center justify-center">
-                   {battingTeam.shortName}
-                </div>
-             )}
-          </div>
+        {/* Background Texture */}
+        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-5"></div>
 
-          <div className="z-10 flex flex-col justify-center">
-            <h1 className="text-4xl broadcast-font font-bold text-white leading-none tracking-tight truncate max-w-[200px] md:max-w-md">
-              {battingTeam.name}
-            </h1>
-            <div className="text-gray-400 text-sm font-medium tracking-widest mt-1">BATTING</div>
-          </div>
-        </div>
-
-        {/* Center Score Display - THE HERO */}
-        <div className="flex-[0_0_auto] bg-gradient-to-b from-gray-800 to-black px-12 flex flex-col items-center justify-center border-x border-gray-700 relative shadow-2xl">
-           <div className="flex items-baseline gap-2">
-             <span className="text-7xl broadcast-font font-bold text-white tracking-tighter tabular-nums drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
-               {matchState.totalRuns}/{matchState.wickets}
-             </span>
-             <span className="text-2xl font-bold text-gray-400 tabular-nums">
-               ({matchState.overs})
-             </span>
-           </div>
-           <div className="text-xs text-yellow-500 font-bold tracking-[0.2em] uppercase mt-[-4px]">
-             Live
-           </div>
-        </div>
-
-        {/* Bowling Team Section */}
-        <div className="flex-1 flex items-center justify-end px-8 relative overflow-hidden">
-           <div className="absolute inset-0 bg-gradient-to-l from-yellow-900/20 to-transparent z-0"></div>
-           
-           <div className="z-10 flex flex-col justify-center items-end mr-6">
-             <h1 className="text-4xl broadcast-font font-bold text-white leading-none tracking-tight text-right truncate max-w-[200px] md:max-w-md">
-               {bowlingTeam.name}
-             </h1>
-             <div className="text-gray-400 text-sm font-medium tracking-widest mt-1">BOWLING</div>
-           </div>
-
-           {/* Flag/Logo Area */}
-           <div className="w-16 h-10 bg-white/10 rounded shadow-lg z-10 flex items-center justify-center text-xs font-bold text-black border border-white/20 overflow-hidden">
-             {bowlingTeam.flagUrl ? (
-                <img src={bowlingTeam.flagUrl} alt={bowlingTeam.shortName} className="w-full h-full object-cover" />
-             ) : (
-                <div className="w-full h-full bg-gradient-to-br from-gray-200 to-gray-400 flex items-center justify-center">
-                   {bowlingTeam.shortName}
-                </div>
-             )}
-           </div>
-        </div>
-      </div>
-
-      {/* Info Strip */}
-      <div className="h-10 bg-gray-900 border-t border-gray-800 flex items-center justify-between px-6 text-sm font-bold tracking-wide uppercase text-gray-300">
-        <div className="flex items-center gap-8">
-           <div className="flex items-center gap-2">
-              <Activity size={16} className="text-blue-400" />
-              <span className="text-gray-400">CRR:</span>
-              <span className="text-white text-lg tabular-nums">{matchState.crr}</span>
-           </div>
-           {matchState.rrr && (
-             <div className="flex items-center gap-2">
-                <TrendingUp size={16} className="text-red-400" />
-                <span className="text-gray-400">RRR:</span>
-                <span className="text-white text-lg tabular-nums">{matchState.rrr}</span>
-             </div>
-           )}
-        </div>
-
-        {matchState.target && (
-            <div className="flex items-center gap-2 bg-gray-800 px-4 py-1 rounded-sm border border-gray-700">
-            <Target size={16} className="text-yellow-500" />
-            <span className="text-gray-400">Target:</span>
-            <span className="text-white text-lg tabular-nums">{matchState.target}</span>
-            <span className="text-gray-500 text-xs normal-case ml-1">
-                ({matchState.target ? matchState.target - matchState.totalRuns : 0} runs needed)
-            </span>
+        {/* Left: Batting Team */}
+        <div className="flex items-center w-[300px] relative z-10 group">
+            {/* Team Color Strip */}
+            <div className="absolute left-0 top-0 bottom-0 w-2" style={{ backgroundColor: battingTeam.color }}></div>
+            
+            {/* Team Logo/Box */}
+            <div className="h-full w-[100px] bg-gradient-to-b from-gray-800 to-gray-900 flex items-center justify-center p-3 ml-2 border-r border-gray-700/50">
+                {battingTeam.flagUrl ? (
+                    <img src={battingTeam.flagUrl} alt={battingTeam.shortName} className="max-h-full max-w-full object-contain drop-shadow-md" />
+                ) : (
+                    <span className="font-bold text-2xl text-white font-teko tracking-wider">{battingTeam.shortName}</span>
+                )}
             </div>
-        )}
+            
+            <div className="flex flex-col justify-center px-5 h-full bg-gradient-to-r from-[#1a1f29] to-transparent w-full">
+                <span className="text-white text-[32px] font-teko font-bold leading-none uppercase tracking-wide drop-shadow-sm">{battingTeam.name}</span>
+                <div className="flex items-center gap-2 mt-1">
+                    <span className="bg-white/10 text-white text-[10px] font-bold uppercase px-2 py-0.5 rounded tracking-widest border border-white/10">Batting</span>
+                </div>
+            </div>
+            
+            {/* Slant Cut */}
+            <div className="absolute top-0 right-0 w-[40px] h-full bg-[#0f1219] transform skew-x-12 translate-x-4 border-l border-gray-800"></div>
+        </div>
+
+        {/* Center: Score */}
+        <div className="flex-1 flex items-center justify-center relative z-20">
+            {/* Live Badge */}
+            <div className="absolute top-2 left-1/2 -translate-x-1/2 flex items-center gap-1.5">
+                 <div className="w-1.5 h-1.5 rounded-full bg-red-600 animate-pulse box-shadow-[0_0_8px_red]"></div>
+                 <span className="text-red-500 text-[10px] font-bold uppercase tracking-[0.2em]">Live</span>
+            </div>
+
+            <div className="flex items-baseline gap-3 text-white mt-3">
+                <span className="text-[84px] font-teko font-bold leading-none tracking-tight drop-shadow-[0_4px_4px_rgba(0,0,0,0.5)]">
+                    {matchState.totalRuns}<span className="text-gray-400 mx-1">/</span>{matchState.wickets}
+                </span>
+                <span className="text-gray-400 text-[40px] font-teko font-medium">
+                    {matchState.overs}
+                </span>
+            </div>
+        </div>
+
+        {/* Right: Bowling Team */}
+        <div className="flex items-center justify-end w-[300px] relative z-10">
+             {/* Slant Cut */}
+             <div className="absolute top-0 left-0 w-[40px] h-full bg-[#0f1219] transform -skew-x-12 -translate-x-4 border-r border-gray-800 z-20"></div>
+
+            <div className="flex flex-col justify-center items-end px-5 h-full bg-gradient-to-l from-[#1a1f29] to-transparent w-full z-10">
+                <span className="text-white text-[32px] font-teko font-bold leading-none uppercase tracking-wide drop-shadow-sm">{bowlingTeam.name}</span>
+                 <div className="flex items-center gap-2 mt-1">
+                    <span className="bg-white/5 text-gray-400 text-[10px] font-bold uppercase px-2 py-0.5 rounded tracking-widest border border-white/5">Bowling</span>
+                </div>
+            </div>
+
+            {/* Team Logo/Box */}
+            <div className="h-full w-[100px] bg-gradient-to-b from-gray-800 to-gray-900 flex items-center justify-center p-3 mr-2 border-l border-gray-700/50 z-10">
+                {bowlingTeam.flagUrl ? (
+                    <img src={bowlingTeam.flagUrl} alt={bowlingTeam.shortName} className="max-h-full max-w-full object-contain drop-shadow-md" />
+                ) : (
+                    <span className="font-bold text-2xl text-white font-teko tracking-wider">{bowlingTeam.shortName}</span>
+                )}
+            </div>
+            
+             {/* Team Color Strip */}
+             <div className="absolute right-0 top-0 bottom-0 w-2 z-20" style={{ backgroundColor: bowlingTeam.color }}></div>
+        </div>
       </div>
+
+      {/* Info Strip (CRR, Target) - INCREASED HEIGHT */}
+      <div className="h-[52px] w-full bg-[#0a0c10] border-b border-gray-800 flex items-center justify-between px-6 text-sm relative z-10">
+         <div className="flex gap-10">
+             <div className="flex items-end gap-3">
+                <span className="text-gray-500 uppercase text-xs font-bold tracking-wider mb-1">CRR</span>
+                <span className="text-blue-400 font-teko text-[44px] font-bold leading-[0.8]">{matchState.crr}</span>
+             </div>
+             {matchState.rrr && (
+                <div className="flex items-end gap-3">
+                    <span className="text-gray-500 uppercase text-xs font-bold tracking-wider mb-1">RRR</span>
+                    <span className="text-red-400 font-teko text-[44px] font-bold leading-[0.8]">{matchState.rrr}</span>
+                </div>
+             )}
+         </div>
+         
+         <div className="flex items-center gap-3">
+             <span className="text-gray-500 uppercase text-xs font-bold tracking-wider">Target</span>
+             <span className="text-white font-teko text-3xl font-bold leading-none mt-1">{matchState.target || '-'}</span>
+             {matchState.target && (
+                 <span className="text-gray-500 text-sm font-medium ml-1">({matchState.target - matchState.totalRuns} needed)</span>
+             )}
+         </div>
+      </div>
+
     </div>
   );
 };

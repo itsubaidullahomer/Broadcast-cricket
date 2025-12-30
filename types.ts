@@ -1,3 +1,4 @@
+
 export interface Player {
   id: string;
   name: string;
@@ -82,6 +83,7 @@ export interface MatchState {
   lastBallCommentary?: string;
   lastShotType?: string;
   lastShotAngle?: number; // For visualization
+  lastBallImage?: string; // Generated image of the action
 }
 
 // API Types
@@ -104,4 +106,6 @@ export interface CricAPIMatch {
     o: number;
     inning: string;
   }[];
+  matchStarted: boolean;
+  matchEnded: boolean;
 }
